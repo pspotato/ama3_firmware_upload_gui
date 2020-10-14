@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
         self.authI = 0              # --authI       Install Authentication check enabled (0,1)
         self.authB = 0              # --authB       Boot Authentication check enabled (0,1)
         self.authkey = 8            # --authkey     Authentication Key Idx (minHmacKeyIdx from keys_info.py)
-        self.appFile = 'artemis_svl.bin'    # --bin Bootloader binary file
+        self.appFile = 'bootloader_svl.bin'    # --bin Bootloader binary file
         self.child0 = 0xFFFFFFFF    # --child0      (blobPtr#0 for Main / feature key for AM3P)
         self.child1 = 0xFFFFFFFF    # --child1      (blobPtr#1 for Main)
         self.crcI = 1               # --crcI        Install CRC check enabled (0,1)

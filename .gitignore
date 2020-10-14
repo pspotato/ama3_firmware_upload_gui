@@ -1,3 +1,6 @@
+# Python virtualenv
+/tools/guidevenv
+
 #VSCode
 
 /.vscode/*

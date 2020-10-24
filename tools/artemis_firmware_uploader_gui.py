@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
         self.SVL_CMD_FRAME   = 0x04  # indicate app data frame
         self.SVL_CMD_RETRY   = 0x05  # request re-send frame
         self.SVL_CMD_DONE    = 0x06  # finished - all data sent
+        self.SVL_CMD_MSG     = 0x07  # message
 
         self.barWidthInCharacters = 50  # Width of progress bar, ie [###### % complete (NOT USED)
 
@@ -352,6 +353,15 @@ class MainWindow(QMainWindow):
         #self.messages.setMinimumSize(1, 2)
         #self.messages.resize(1, 2)
 
+        # Remote Messages Bar
+        messages_label_remote = QLabel(self.tr('Remote Status / Warnings:'))
+
+        # Remote Messages Window
+        self.messages_remote = QPlainTextEdit()
+        # Attempting to reduce window size
+        #self.messages_remote.setMinimumSize(1, 2)
+        #self.messages_remote.resize(1, 2)
+
         # Menu Bar
         menubar = self.menuBar()
         boardMenu = menubar.addMenu('Board Type')
@@ -389,8 +399,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(messages_label, 4, 0)
         layout.addWidget(self.messages, 5, 0, 5, 3)
 
-        layout.addWidget(upload_btn, 15, 2)
-        layout.addWidget(updateBootloader_btn, 15, 0)
+        layout.addWidget(messages_label_remote, 15, 0)
+        layout.addWidget(self.messages_remote, 16, 0, 16, 3)
+
+        layout.addWidget(upload_btn, 36, 2)
+        layout.addWidget(updateBootloader_btn, 36, 0)
 
         widget = QWidget()
         widget.setLayout(layout)
@@ -403,6 +416,8 @@ class MainWindow(QMainWindow):
         # Make the text edit window read-only
         self.messages.setReadOnly(True)
         self.messages.clear()  # Clear the message window
+        self.messages_remote.setReadOnly(True)
+        self.messages_remote.clear()  # Clear the message window
 
     def addMessage(self, msg: str) -> None:
         """Add msg to the messages window, ensuring that it is visible"""
@@ -411,6 +426,14 @@ class MainWindow(QMainWindow):
         self.messages.appendPlainText(msg)
         self.messages.ensureCursorVisible()
         self.repaint() # Update/refresh the message window
+    
+    def addMessageRemote(self, msg: str) -> None:
+        """Add msg to the remote messages window, ensuring that it is visible"""
+        self.messages_remote.moveCursor(QTextCursor.End)
+        self.messages_remote.ensureCursorVisible()
+        self.messages_remote.appendPlainText(msg)
+        self.messages_remote.ensureCursorVisible()
+        self.repaint() # Update/refresh the remote message window
 
     def _load_settings(self) -> None:
         """Load settings on startup."""
@@ -655,29 +678,47 @@ class MainWindow(QMainWindow):
 
         baud_detect_byte = b'U'
 
+        vesion_pkg_received = False
+        packet_counter = 0
+
         self.addMessage("Phase:\tSetup")
 
         self.ser.reset_input_buffer()                        # Handle the serial startup blip
         self.addMessage("\tCleared startup blip")
 
         self.ser.write(baud_detect_byte)            # send the baud detection character
-        #self.addMessage("\tsent baud_detect_byte")
+        self.addMessage("\tSent baud_detect_byte")
 
-        packet = self.wait_for_packet()
-        #self.addMessage("\twait_for_packet complete")
-        if(packet['timeout']):
-            #self.addMessage("\twait_for_packet timeout")
-            return
-        if(packet['crc']):
-            #self.addMessage("\twait_for_packet crc error")
-            return
+        while(not vesion_pkg_received):
 
-        self.installed_bootloader = int.from_bytes(packet['data'], 'big')
-        self.addMessage("\tGot SVL Bootloader Version: " + str(self.installed_bootloader))
-        self.addMessage("\tSending \'enter bootloader\' command")
+            packet = self.wait_for_packet()
 
-        self.send_packet(self.SVL_CMD_BL, b'')
-        #self.addMessage("\tfinished send_packet")
+            if(packet['timeout']):
+                self.addMessage("\twait_for_packet timeout")
+                return
+            if(packet['crc']):
+                self.addMessage("\twait_for_packet crc error")
+                return
+        
+            if(packet['cmd'] == self.SVL_CMD_VER):
+                self.addMessage("\twait_for_packet complete")
+                self.installed_bootloader = int.from_bytes(packet['data'], 'big')
+                self.addMessage("\tGot SVL Bootloader Version: " + str(self.installed_bootloader))
+                self.addMessage("\tSending \'enter bootloader\' command")
+
+                vesion_pkg_received = True
+
+                self.send_packet(self.SVL_CMD_BL, b'')
+                #self.addMessage("\tfinished send_packet")
+                return
+
+            if(packet['cmd'] == self.SVL_CMD_MSG):
+                self.addMessageRemote(packet['data'].decode('ascii'))
+
+            packet_counter += 1
+            if(packet_counter > 10):    # There should be less than 10 message packets before the version packet
+                self.addMessage("\tNo version packet received in time")
+                return
 
         # Now enter the bootload phase
 
@@ -706,37 +747,50 @@ class MainWindow(QMainWindow):
 
             bl_done = False
             bl_failed = False
+            done_sent = False
+
             while((not bl_done) and (not bl_failed)):
 
                 packet = self.wait_for_packet()               # wait for indication by Artemis
 
-                if(packet['timeout'] or packet['crc']):
-                    self.addMessage("\tError receiving packet")
-                    bl_failed = True
-                    bl_done = True
+                print(packet)
 
-                if( packet['cmd'] == self.SVL_CMD_NEXT ):
-                    self.addMessage("\tGot frame request")
-                    curr_frame += 1
-                    resend_count = 0
-                elif( packet['cmd'] == self.SVL_CMD_RETRY ):
-                    self.addMessage("\tRetrying...")
-                    resend_count += 1
-                    if( resend_count >= resend_max ):
+                if( packet['cmd'] == self.SVL_CMD_MSG ):
+                    self.addMessageRemote(packet['data'].decode('ascii'))
+                elif( packet['cmd'] == self.SVL_CMD_DONE ):
+                            bl_done = True
+                            break
+                elif( not done_sent ):
+                    if((packet['timeout'] or packet['crc'])):
+                        self.addMessage("\tError receiving packet")
                         bl_failed = True
                         bl_done = True
-                else:
-                    self.addMessage("\tUnknown error")
-                    bl_failed = True
-                    bl_done = True
+                        break
 
-                if( curr_frame <= total_frames ):
-                    frame_data = application[((curr_frame-1)*frame_size):((curr_frame-1+1)*frame_size)]
-                    self.addMessage("\tSending frame #" + str(curr_frame) + ", length: " + str(len(frame_data)))
-                    self.send_packet(self.SVL_CMD_FRAME, frame_data)
-                else:
-                    self.send_packet(self.SVL_CMD_DONE, b'')
-                    bl_done = True
+                    if( packet['cmd'] == self.SVL_CMD_NEXT ):
+                        self.addMessage("\tGot frame request")
+                        curr_frame += 1
+                        resend_count = 0
+                    elif( packet['cmd'] == self.SVL_CMD_RETRY ):
+                        self.addMessage("\tRetrying...")
+                        resend_count += 1
+                        if( resend_count >= resend_max ):
+                            bl_failed = True
+                            bl_done = True
+                            break
+                    else:
+                        self.addMessage("\tUnknown error")
+                        bl_failed = True
+                        bl_done = True
+                        break
+
+                    if( curr_frame <= total_frames ):
+                        frame_data = application[((curr_frame-1)*frame_size):((curr_frame-1+1)*frame_size)]
+                        self.addMessage("\tSending frame #" + str(curr_frame) + ", length: " + str(len(frame_data)))
+                        self.send_packet(self.SVL_CMD_FRAME, frame_data)
+                    else:
+                        self.send_packet(self.SVL_CMD_DONE, b'')
+                        done_sent = True
 
             if( bl_failed == False ):
                 self.addMessage("Upload complete!")

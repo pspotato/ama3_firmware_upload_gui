@@ -11,7 +11,8 @@
     <OutputPath>.</OutputPath>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <InterpreterId>MSBuild|guidevenv|$(MSBuildProjectFullPath)</InterpreterId>
+    <InterpreterId>MSBuild|loca01_venv|$(MSBuildProjectFullPath)</InterpreterId>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
   <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
@@ -26,14 +27,14 @@
     <Compile Include="artemis_firmware_uploader_gui.py" />
   </ItemGroup>
   <ItemGroup>
-    <Interpreter Include="guidevenv\">
-      <Id>guidevenv</Id>
-      <Description>guidevenv (Python 3.8 (64-bit))</Description>
+    <Interpreter Include="..\..\..\..\..\loca01_venv\">
+      <Id>loca01_venv</Id>
+      <Version>3.8</Version>
+      <Description>loca01_venv (Python 3.8 (64-bit))</Description>
       <InterpreterPath>Scripts\python.exe</InterpreterPath>
       <WindowsInterpreterPath>Scripts\pythonw.exe</WindowsInterpreterPath>
-      <Version>3.8</Version>
-      <Architecture>X64</Architecture>
       <PathEnvironmentVariable>PYTHONPATH</PathEnvironmentVariable>
+      <Architecture>X64</Architecture>
     </Interpreter>
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

@@ -57,7 +57,7 @@ artemis_svl.bin (the bootloader binary)
 #       3. Push the wired update blob into the Artemis module
 
 from typing import Iterator, Tuple
-from PyQt5.QtCore import QSettings, QProcess, QTimer, QThread
+from PyQt5.QtCore import QSettings, QProcess, QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import QWidget, QLabel, QComboBox, QGridLayout, \
     QPushButton, QApplication, QLineEdit, QFileDialog, QPlainTextEdit, \
     QAction, QActionGroup, QMenu, QMenuBar, QMainWindow
@@ -78,9 +78,9 @@ BOOTLOADER_VERSION = 5 # << Change this to match the version of artemis_svl.bin
 
 # Setting constants
 SETTING_PORT_NAME = 'port_name'
-SETTING_FILE_LOCATION = 'message'
-SETTING_BAUD_RATE = '115200' # Default to 115200 for upload
-SETTING_ARTEMIS = 'True' # Default to Artemis-based boards
+SETTING_FILE_LOCATION = 'file_location'
+SETTING_BAUD_RATE = 'baud_rate' # Default to 115200 for upload
+SETTING_ARTEMIS = 'artemis' # Default to Artemis-based boards
 
 guiVersion = 'v3.0'
 
@@ -103,58 +103,11 @@ class MainWindow(QMainWindow):
     def __init__(self, parent: QMainWindow = None) -> None:
         super().__init__(parent)
 
-        self.installed_bootloader = -1 # Use this to record the bootloader version
-
-        # ///// START of code taken from artemis_svl.py
-        
-        # Really these should not be self.'globals'. It might be best to put them back into a separate file?
-        
-        # Commands
-        self.SVL_CMD_VER     = 0x01  # version
-        self.SVL_CMD_BL      = 0x02  # enter bootload mode
-        self.SVL_CMD_NEXT    = 0x03  # request next chunk
-        self.SVL_CMD_FRAME   = 0x04  # indicate app data frame
-        self.SVL_CMD_RETRY   = 0x05  # request re-send frame
-        self.SVL_CMD_DONE    = 0x06  # finished - all data sent
-        self.SVL_CMD_MSG     = 0x07  # message
-
-        self.barWidthInCharacters = 50  # Width of progress bar, ie [###### % complete (NOT USED)
-
-        self.crcTable = (
-            0x0000, 0x8005, 0x800F, 0x000A, 0x801B, 0x001E, 0x0014, 0x8011,
-            0x8033, 0x0036, 0x003C, 0x8039, 0x0028, 0x802D, 0x8027, 0x0022,
-            0x8063, 0x0066, 0x006C, 0x8069, 0x0078, 0x807D, 0x8077, 0x0072,
-            0x0050, 0x8055, 0x805F, 0x005A, 0x804B, 0x004E, 0x0044, 0x8041,
-            0x80C3, 0x00C6, 0x00CC, 0x80C9, 0x00D8, 0x80DD, 0x80D7, 0x00D2,
-            0x00F0, 0x80F5, 0x80FF, 0x00FA, 0x80EB, 0x00EE, 0x00E4, 0x80E1,
-            0x00A0, 0x80A5, 0x80AF, 0x00AA, 0x80BB, 0x00BE, 0x00B4, 0x80B1,
-            0x8093, 0x0096, 0x009C, 0x8099, 0x0088, 0x808D, 0x8087, 0x0082,
-            0x8183, 0x0186, 0x018C, 0x8189, 0x0198, 0x819D, 0x8197, 0x0192,
-            0x01B0, 0x81B5, 0x81BF, 0x01BA, 0x81AB, 0x01AE, 0x01A4, 0x81A1,
-            0x01E0, 0x81E5, 0x81EF, 0x01EA, 0x81FB, 0x01FE, 0x01F4, 0x81F1,
-            0x81D3, 0x01D6, 0x01DC, 0x81D9, 0x01C8, 0x81CD, 0x81C7, 0x01C2,
-            0x0140, 0x8145, 0x814F, 0x014A, 0x815B, 0x015E, 0x0154, 0x8151,
-            0x8173, 0x0176, 0x017C, 0x8179, 0x0168, 0x816D, 0x8167, 0x0162,
-            0x8123, 0x0126, 0x012C, 0x8129, 0x0138, 0x813D, 0x8137, 0x0132,
-            0x0110, 0x8115, 0x811F, 0x011A, 0x810B, 0x010E, 0x0104, 0x8101,
-            0x8303, 0x0306, 0x030C, 0x8309, 0x0318, 0x831D, 0x8317, 0x0312,
-            0x0330, 0x8335, 0x833F, 0x033A, 0x832B, 0x032E, 0x0324, 0x8321,
-            0x0360, 0x8365, 0x836F, 0x036A, 0x837B, 0x037E, 0x0374, 0x8371,
-            0x8353, 0x0356, 0x035C, 0x8359, 0x0348, 0x834D, 0x8347, 0x0342,
-            0x03C0, 0x83C5, 0x83CF, 0x03CA, 0x83DB, 0x03DE, 0x03D4, 0x83D1,
-            0x83F3, 0x03F6, 0x03FC, 0x83F9, 0x03E8, 0x83ED, 0x83E7, 0x03E2,
-            0x83A3, 0x03A6, 0x03AC, 0x83A9, 0x03B8, 0x83BD, 0x83B7, 0x03B2,
-            0x0390, 0x8395, 0x839F, 0x039A, 0x838B, 0x038E, 0x0384, 0x8381,
-            0x0280, 0x8285, 0x828F, 0x028A, 0x829B, 0x029E, 0x0294, 0x8291,
-            0x82B3, 0x02B6, 0x02BC, 0x82B9, 0x02A8, 0x82AD, 0x82A7, 0x02A2,
-            0x82E3, 0x02E6, 0x02EC, 0x82E9, 0x02F8, 0x82FD, 0x82F7, 0x02F2,
-            0x02D0, 0x82D5, 0x82DF, 0x02DA, 0x82CB, 0x02CE, 0x02C4, 0x82C1,
-            0x8243, 0x0246, 0x024C, 0x8249, 0x0258, 0x825D, 0x8257, 0x0252,
-            0x0270, 0x8275, 0x827F, 0x027A, 0x826B, 0x026E, 0x0264, 0x8261,
-            0x0220, 0x8225, 0x822F, 0x022A, 0x823B, 0x023E, 0x0234, 0x8231,
-            0x8213, 0x0216, 0x021C, 0x8219, 0x0208, 0x820D, 0x8207, 0x0202)
-
-        # ///// END of code taken from artemis_svl.py
+        self.basicInfo = {
+            "port": 'port_name',
+            "baudRate": 'baud_rate',
+            "fileLocation": 'file_location',
+        }
 
         ## ///// START of code taken from ambiq_bin2board.py
 
@@ -313,9 +266,9 @@ class MainWindow(QMainWindow):
             self.on_browse_btn_pressed)
 
         # Browse for new file button
-        browse_btn = QPushButton(self.tr('Browse'))
-        browse_btn.setEnabled(True)
-        browse_btn.pressed.connect(self.on_browse_btn_pressed)
+        self.browse_btn = QPushButton(self.tr('Browse'))
+        self.browse_btn.setEnabled(True)
+        self.browse_btn.pressed.connect(self.on_browse_btn_pressed)
 
         # Port Combobox
         port_label = QLabel(self.tr('COM Port:'))
@@ -324,12 +277,12 @@ class MainWindow(QMainWindow):
         self.update_com_ports()
 
         # Refresh Button
-        refresh_btn = QPushButton(self.tr('Refresh'))
-        refresh_btn.pressed.connect(self.on_refresh_btn_pressed)
+        self.refresh_btn = QPushButton(self.tr('Refresh'))
+        self.refresh_btn.pressed.connect(self.on_refresh_btn_pressed)
 
         # Clear Button
-        clear_btn = QPushButton(self.tr('Clear Log'))
-        clear_btn.pressed.connect(self.on_clear_btn_pressed)
+        self.clear_btn = QPushButton(self.tr('Clear Log'))
+        self.clear_btn.pressed.connect(self.on_clear_btn_pressed)
 
         # Baudrate Combobox
         baud_label = QLabel(self.tr('Baud Rate:'))
@@ -340,13 +293,13 @@ class MainWindow(QMainWindow):
         # Upload Button
         myFont=QFont()
         myFont.setBold(True)
-        upload_btn = QPushButton(self.tr('  Upload Firmware  '))
-        upload_btn.setFont(myFont)
-        upload_btn.pressed.connect(self.on_upload_btn_pressed)
+        self.upload_btn = QPushButton(self.tr('  Upload Firmware  '))
+        self.upload_btn.setFont(myFont)
+        self.upload_btn.pressed.connect(self.on_upload_btn_pressed)
 
         ## Upload Bootloader Button
-        #updateBootloader_btn = QPushButton(self.tr(' Update Bootloader '))
-        #updateBootloader_btn.pressed.connect(self.on_update_bootloader_btn_pressed)
+        #self.updateBootloader_btn = QPushButton(self.tr(' Update Bootloader '))
+        #self.updateBootloader_btn.pressed.connect(self.on_update_bootloader_btn_pressed)
 
         # Messages Bar
         messages_label = QLabel(self.tr('Status / Warnings:'))
@@ -391,15 +344,15 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(msg_label, 1, 0)
         layout.addWidget(self.fileLocation_lineedit, 1, 1)
-        layout.addWidget(browse_btn, 1, 2)
+        layout.addWidget(self.browse_btn, 1, 2)
 
         layout.addWidget(port_label, 2, 0)
         layout.addWidget(self.port_combobox, 2, 1)
-        layout.addWidget(refresh_btn, 2, 2)
+        layout.addWidget(self.refresh_btn, 2, 2)
 
         layout.addWidget(baud_label, 3, 0)
         layout.addWidget(self.baud_combobox, 3, 1)
-        layout.addWidget(clear_btn, 3, 2)
+        layout.addWidget(self.clear_btn, 3, 2)
 
         layout.addWidget(messages_label, 4, 0)
         layout.addWidget(self.messages, 5, 0, 5, 3)
@@ -407,8 +360,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(messages_label_remote, 15, 0)
         layout.addWidget(self.messages_remote, 16, 0, 16, 3)
 
-        layout.addWidget(upload_btn, 36, 2)
-        #layout.addWidget(updateBootloader_btn, 36, 0)
+        layout.addWidget(self.upload_btn, 36, 2)
+        #layout.addWidget(self.updateBootloader_btn, 36, 0)
 
         widget = QWidget()
         widget.setLayout(layout)
@@ -544,6 +497,18 @@ class MainWindow(QMainWindow):
 
         event.accept()
 
+    def on_browse_btn_pressed(self) -> None:
+        """Open dialog to select bin file."""
+        options = QFileDialog.Options()
+        fileName, _ = QFileDialog.getOpenFileName(
+            None,
+            "Select Firmware to Upload",
+            "",
+            "Firmware Files (*.bin);;All Files (*)",
+            options=options)
+        if fileName:
+            self.fileLocation_lineedit.setText(fileName)
+
     def on_refresh_btn_pressed(self) -> None:
         self.update_com_ports()
         self.addMessage("Ports Refreshed\n")
@@ -575,290 +540,66 @@ class MainWindow(QMainWindow):
                 return
             f.close()
 
+        self.basicInfo['port'] = self.port
+        self.basicInfo['baudRate'] = self.baudRate
+        self.basicInfo['fileLocation'] = self.fileLocation_lineedit.text()
+
         self.addMessage("\nUploading firmware")
 
-        self.upload_main() # Call artemis_svl.py (previously this spawned a QProcess)
-
-    #def on_update_bootloader_btn_pressed(self) -> None:
-    #    """Check if port is available"""
-    #    portAvailable = False
-    #    for desc, name, sys in gen_serial_ports():
-    #        if (sys == self.port):
-    #            portAvailable = True
-    #    if (portAvailable == False):
-    #        self.addMessage("Port No Longer Available")
-    #        return
-
-    #    """Check if file exists"""
-    #    fileExists = False
-    #    try:
-    #        f = open(resource_path(self.appFile))
-    #        fileExists = True
-    #    except IOError:
-    #        fileExists = False
-    #    finally:
-    #        if (fileExists == False):
-    #            self.addMessage("Bootloader file Not Found")
-    #            return
-    #        f.close()
-
-    #    self.addMessage("\nUpdating bootloader")
-
-    #    self.update_main() # Call ambiq_bin2board.py (previously this spawned a QProcess)
-
-    def on_browse_btn_pressed(self) -> None:
-        """Open dialog to select bin file."""
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(
-            None,
-            "Select Firmware to Upload",
-            "",
-            "Firmware Files (*.bin);;All Files (*)",
-            options=options)
-        if fileName:
-            self.fileLocation_lineedit.setText(fileName)
-
-    # ///// START of code taken from artemis_svl.py
-
-    def get_crc16(self, data) -> int:
-        """Compute CRC on a byte array"""
-
-        #Table and code ported from Artemis SVL bootloader
-        crc = 0x0000
-        data = bytearray(data)
-        for ch in data:
-            tableAddr = ch ^ (crc >> 8)
-            CRCH = (self.crcTable[tableAddr] >> 8) ^ (crc & 0xFF)
-            CRCL = self.crcTable[tableAddr] & 0x00FF
-            crc = CRCH << 8 | CRCL
-        #self.addMessage("\tcrc is " + str(crc))
-        return crc
-
-
-    def wait_for_packet(self) -> dict:
-        """Wait for a packet"""
-
-        packet = {'len':0, 'cmd':0, 'data':0, 'crc':1, 'timeout':1}
-
-        n = self.ser.read(2) # get the length bytes
-        if(len(n) < 2):
-            #self.addMessage("\tpacket length < 2")
-            return packet
-
-        packet['len'] = int.from_bytes(n, byteorder='big', signed=False)
-        #self.addMessage("\tpacket length " + str(packet['len']))
-
-        if(packet['len'] == 0): # Check for an empty packet
-            return packet
-
-        payload = self.ser.read(packet['len']) #read bytes (or timeout)
-
-        if(len(payload) != packet['len']):
-            #self.addMessage("\tincorrect payload length")
-            return packet
-
-        packet['timeout'] = 0                           # all bytes received, so timeout is not true
-        packet['cmd'] = payload[0]                      # cmd is the first byte of the payload
-        packet['data'] = payload[1:packet['len']-2]     # the data is the part of the payload that is not cmd or crc
-        packet['crc'] = self.get_crc16(payload)         # performing the crc on the whole payload should return 0
-
-        return packet
-
-
-    def send_packet(self, cmd, data) -> None:
-        """Send a packet"""
-
-        data = bytearray(data)
-        num_bytes = 3 + len(data)
-        #self.addMessage("\tsending packet length " + str(num_bytes))
-        payload = bytearray(cmd.to_bytes(1,'big'))
-        payload.extend(data)
-        crc = self.get_crc16(payload)
-        payload.extend(bytearray(crc.to_bytes(2,'big')))
-        #self.addMessage("\tsending packet crc " + str(crc))
-
-        self.ser.write(num_bytes.to_bytes(2,'big'))
-        #self.addMessage("\t" + str(num_bytes.to_bytes(2,'big')))
-        self.ser.write(bytes(payload))
-        #self.addMessage("\t" + str(bytes(payload)))
-
-    def phase_setup(self) -> None:
-        """Setup: signal baud rate, get version, and command BL enter"""
-
-        upgrade_cmd = b'Upgrade'
-        baud_detect_byte = b'U'
-
-
-        vesion_pkg_received = False
-        packet_counter = 0
-
-        self.addMessage("Phase:\tSetup")
-
-        self.ser.write(bytes(upgrade_cmd))          # send the upgrade command
-        self.addMessage("\tSent upgrade_cmd")
-        time.sleep(5)                               # wait five seconds for ama3 to go to be bootloader mode
-
-        self.ser.reset_input_buffer()               # Handle the serial startup blip
-        self.addMessage("\tCleared startup blip")
-
-        self.ser.write(baud_detect_byte)            # send the baud detection character
-        self.addMessage("\tSent baud_detect_byte")
-
-        while(not vesion_pkg_received):
-
-            packet = self.wait_for_packet()
-
-            if(packet['timeout']):
-                self.addMessage("\twait_for_packet timeout")
-                return
-            if(packet['crc']):
-                self.addMessage("\twait_for_packet crc error")
-                return
-        
-            if(packet['cmd'] == self.SVL_CMD_VER):
-                self.addMessage("\twait_for_packet complete")
-                self.installed_bootloader = int.from_bytes(packet['data'], 'big')
-                self.addMessage("\tGot SVL Bootloader Version: " + str(self.installed_bootloader))
-                self.addMessage("\tSending \'enter bootloader\' command")
-
-                vesion_pkg_received = True
-
-                self.send_packet(self.SVL_CMD_BL, b'')
-                #self.addMessage("\tfinished send_packet")
-                return
-
-            if(packet['cmd'] == self.SVL_CMD_MSG):
-                self.addMessageRemote(packet['data'].decode('ascii'))
-
-            packet_counter += 1
-            if(packet_counter > 10):    # There should be less than 10 message packets before the version packet
-                self.addMessage("\tNo version packet received in time")
-                return
-
-        # Now enter the bootload phase
-
-
-    def phase_bootload(self) -> bool:
-        """Bootloader phase (Artemis is locked in)"""
-
-        startTime = time.time()
-        frame_size = 512*4
-
-        resend_max = 4
-        resend_count = 0
-
-        self.addMessage("Phase:\tBootload")
-
-        with open(self.fileLocation_lineedit.text(), mode='rb') as binfile:
-            application = binfile.read()
-            total_len = len(application)
-
-            total_frames = math.ceil(total_len/frame_size)
-            curr_frame = 0
-            progressChars = 0
-
-            self.addMessage("\tSending " + str(total_len) +
-                         " bytes in " + str(total_frames) + " frames")
-
-            bl_done = False
-            bl_failed = False
-            done_sent = False
-
-            while((not bl_done) and (not bl_failed)):
-
-                packet = self.wait_for_packet()               # wait for indication by Artemis
-
-                print(packet)
-
-                if( packet['cmd'] == self.SVL_CMD_MSG ):
-                    self.addMessageRemote(packet['data'].decode('ascii'))
-                elif( packet['cmd'] == self.SVL_CMD_DONE ):
-                            bl_done = True
-                            break
-                elif( not done_sent ):
-                    if((packet['timeout'] or packet['crc'])):
-                        self.addMessage("\tError receiving packet")
-                        bl_failed = True
-                        bl_done = True
-                        break
-
-                    if( packet['cmd'] == self.SVL_CMD_NEXT ):
-                        self.addMessage("\tGot frame request")
-                        curr_frame += 1
-                        resend_count = 0
-                    elif( packet['cmd'] == self.SVL_CMD_RETRY ):
-                        self.addMessage("\tRetrying...")
-                        resend_count += 1
-                        if( resend_count >= resend_max ):
-                            bl_failed = True
-                            bl_done = True
-                            break
-                    else:
-                        self.addMessage("\tUnknown error")
-                        bl_failed = True
-                        bl_done = True
-                        break
-
-                    if( curr_frame <= total_frames ):
-                        frame_data = application[((curr_frame-1)*frame_size):((curr_frame-1+1)*frame_size)]
-                        self.addMessage("\tSending frame #" + str(curr_frame) + ", length: " + str(len(frame_data)))
-                        self.send_packet(self.SVL_CMD_FRAME, frame_data)
-                    else:
-                        self.send_packet(self.SVL_CMD_DONE, b'')
-                        done_sent = True
-
-            if( bl_failed == False ):
-                self.addMessage("Upload complete!")
-                endTime = time.time()
-                bps = total_len / (endTime - startTime)
-                self.addMessage("Nominal bootload " + str(round(bps, 2)) + " bytes/sec\n")
-            else:
-                self.addMessage("Upload failed!\n")
-                if (self.baudRate > 115200):
-                    self.addMessage("Please try a slower Baud Rate\n")
-
-            return bl_failed
-
-
-    def upload_main(self) -> None:
-        """SparkFun Variable Loader (Variable baud rate bootloader for Artemis Apollo3 modules)"""
-        try:
-            num_tries = 3
-
-            #self.messages.clear() # Clear the message window
-
-            self.addMessage("\nArtemis SVL Uploader\n")
-
-            for _ in range(num_tries):
-
-                bl_failed = False
-
-                # Open the serial port
-                #self.addMessage("Opening " + str(self.port) + " at " + str(self.baudRate) + " Baud")
-                with serial.Serial(self.port, self.baudRate, timeout=0.5) as self.ser:
-
-                    t_su = 0.15             # startup time for Artemis bootloader   (experimentally determined - 0.095 sec min delay)
-
-                    time.sleep(t_su)        # Allow Artemis to come out of reset
-                    self.phase_setup()      # Perform baud rate negotiation
-
-                    bl_failed = self.phase_bootload()     # Bootload
-
-                if( bl_failed == False ):
-                    break
-            if ((self.installed_bootloader >= 0) and (self.installed_bootloader < BOOTLOADER_VERSION)):
-                self.addMessage("\nYour bootloader is out of date.\nPlease click Update Bootloader.")
-
-        except:
-            self.addMessage("Could not communicate with board!")
-
-        try:
-            self.ser.close()
-        except:
-            pass
-
-
-    # ///// END of code taken from artemis_svl.py
+        self.get_thread = uploadFirmwareThread(self.basicInfo)
+
+        self.get_thread.addMessage[str].connect(self.addMessage)
+        self.get_thread.addMessageRemote[str].connect(self.addMessageRemote)
+        self.get_thread.finished.connect(self.done)
+
+        #self.connect(self.get_thread, SIGNAL("addMessage(Qstring)"), self.addMessage)
+        #self.connect(self.get_thread, SIGNAL("addMessageRemote(Qstring)"), self.addMessageRemote)
+        #self.connect(self.get_thread, SIGNAL("finished()"), self.done)
+
+        self.get_thread.start()
+
+        self.browse_btn.setEnabled(False)
+        self.refresh_btn.setEnabled(False)
+        self.clear_btn.setEnabled(False)
+        self.upload_btn.setEnabled(False)
+
+        #self.upload_main() # Call artemis_svl.py (previously this spawned a QProcess)
+
+    def done(self):
+        """
+        Enable buttons
+        """
+        self.browse_btn.setEnabled(True)
+        self.refresh_btn.setEnabled(True)
+        self.clear_btn.setEnabled(True)
+        self.upload_btn.setEnabled(True)
+
+#    def on_update_bootloader_btn_pressed(self) -> None:
+#        """Check if port is available"""
+#        portAvailable = False
+#        for desc, name, sys in gen_serial_ports():
+#            if (sys == self.port):
+#                portAvailable = True
+#        if (portAvailable == False):
+#            self.addMessage("Port No Longer Available")
+#            return
+
+#        """Check if file exists"""
+#        fileExists = False
+#        try:
+#            f = open(resource_path(self.appFile))
+#            fileExists = True
+#        except IOError:
+#            fileExists = False
+#        finally:
+#            if (fileExists == False):
+#                self.addMessage("Bootloader file Not Found")
+#                return
+#            f.close()
+
+#        self.addMessage("\nUpdating bootloader")
+
+#        self.update_main() # Call ambiq_bin2board.py (previously this spawned a QProcess)
 
 #    # ///// START of code taken from am_defines.py
 
@@ -1602,12 +1343,313 @@ class MainWindow(QMainWindow):
 #    # ///// END of code taken from ambiq_bin2board.py
 
 class uploadFirmwareThread(QThread):
-    def __init__(self):
-        Qthread.__init__(self)
+    addMessage = pyqtSignal(str)
+    addMessageRemote = pyqtSignal(str)
+
+    def __init__(self, basicInfo):
+        QThread.__init__(self)
+        
+        self.basicInfo = basicInfo.copy()
+
+        self.installed_bootloader = -1 # Use this to record the bootloader version
+
+        # ///// START of code taken from artemis_svl.py
+        
+        # Really these should not be self.'globals'. It might be best to put them back into a separate file?
+            
+        # Commands
+        self.SVL_CMD_VER     = 0x01  # version
+        self.SVL_CMD_BL      = 0x02  # enter bootload mode
+        self.SVL_CMD_NEXT    = 0x03  # request next chunk
+        self.SVL_CMD_FRAME   = 0x04  # indicate app data frame
+        self.SVL_CMD_RETRY   = 0x05  # request re-send frame
+        self.SVL_CMD_DONE    = 0x06  # finished - all data sent
+        self.SVL_CMD_MSG     = 0x07  # message
+
+        self.barWidthInCharacters = 50  # Width of progress bar, ie [###### % complete (NOT USED)
+
+        self.crcTable = (
+            0x0000, 0x8005, 0x800F, 0x000A, 0x801B, 0x001E, 0x0014, 0x8011,
+            0x8033, 0x0036, 0x003C, 0x8039, 0x0028, 0x802D, 0x8027, 0x0022,
+            0x8063, 0x0066, 0x006C, 0x8069, 0x0078, 0x807D, 0x8077, 0x0072,
+            0x0050, 0x8055, 0x805F, 0x005A, 0x804B, 0x004E, 0x0044, 0x8041,
+            0x80C3, 0x00C6, 0x00CC, 0x80C9, 0x00D8, 0x80DD, 0x80D7, 0x00D2,
+            0x00F0, 0x80F5, 0x80FF, 0x00FA, 0x80EB, 0x00EE, 0x00E4, 0x80E1,
+            0x00A0, 0x80A5, 0x80AF, 0x00AA, 0x80BB, 0x00BE, 0x00B4, 0x80B1,
+            0x8093, 0x0096, 0x009C, 0x8099, 0x0088, 0x808D, 0x8087, 0x0082,
+            0x8183, 0x0186, 0x018C, 0x8189, 0x0198, 0x819D, 0x8197, 0x0192,
+            0x01B0, 0x81B5, 0x81BF, 0x01BA, 0x81AB, 0x01AE, 0x01A4, 0x81A1,
+            0x01E0, 0x81E5, 0x81EF, 0x01EA, 0x81FB, 0x01FE, 0x01F4, 0x81F1,
+            0x81D3, 0x01D6, 0x01DC, 0x81D9, 0x01C8, 0x81CD, 0x81C7, 0x01C2,
+            0x0140, 0x8145, 0x814F, 0x014A, 0x815B, 0x015E, 0x0154, 0x8151,
+            0x8173, 0x0176, 0x017C, 0x8179, 0x0168, 0x816D, 0x8167, 0x0162,
+            0x8123, 0x0126, 0x012C, 0x8129, 0x0138, 0x813D, 0x8137, 0x0132,
+            0x0110, 0x8115, 0x811F, 0x011A, 0x810B, 0x010E, 0x0104, 0x8101,
+            0x8303, 0x0306, 0x030C, 0x8309, 0x0318, 0x831D, 0x8317, 0x0312,
+            0x0330, 0x8335, 0x833F, 0x033A, 0x832B, 0x032E, 0x0324, 0x8321,
+            0x0360, 0x8365, 0x836F, 0x036A, 0x837B, 0x037E, 0x0374, 0x8371,
+            0x8353, 0x0356, 0x035C, 0x8359, 0x0348, 0x834D, 0x8347, 0x0342,
+            0x03C0, 0x83C5, 0x83CF, 0x03CA, 0x83DB, 0x03DE, 0x03D4, 0x83D1,
+            0x83F3, 0x03F6, 0x03FC, 0x83F9, 0x03E8, 0x83ED, 0x83E7, 0x03E2,
+            0x83A3, 0x03A6, 0x03AC, 0x83A9, 0x03B8, 0x83BD, 0x83B7, 0x03B2,
+            0x0390, 0x8395, 0x839F, 0x039A, 0x838B, 0x038E, 0x0384, 0x8381,
+            0x0280, 0x8285, 0x828F, 0x028A, 0x829B, 0x029E, 0x0294, 0x8291,
+            0x82B3, 0x02B6, 0x02BC, 0x82B9, 0x02A8, 0x82AD, 0x82A7, 0x02A2,
+            0x82E3, 0x02E6, 0x02EC, 0x82E9, 0x02F8, 0x82FD, 0x82F7, 0x02F2,
+            0x02D0, 0x82D5, 0x82DF, 0x02DA, 0x82CB, 0x02CE, 0x02C4, 0x82C1,
+            0x8243, 0x0246, 0x024C, 0x8249, 0x0258, 0x825D, 0x8257, 0x0252,
+            0x0270, 0x8275, 0x827F, 0x027A, 0x826B, 0x026E, 0x0264, 0x8261,
+            0x0220, 0x8225, 0x822F, 0x022A, 0x823B, 0x023E, 0x0234, 0x8231,
+            0x8213, 0x0216, 0x021C, 0x8219, 0x0208, 0x820D, 0x8207, 0x0202)
+
+        # ///// END of code taken from artemis_svl.py
 
     def __del__(self):
         self.wait()
 
+    # ///// START of code taken from artemis_svl.py
+
+    def get_crc16(self, data) -> int:
+        """Compute CRC on a byte array"""
+
+        #Table and code ported from Artemis SVL bootloader
+        crc = 0x0000
+        data = bytearray(data)
+        for ch in data:
+            tableAddr = ch ^ (crc >> 8)
+            CRCH = (self.crcTable[tableAddr] >> 8) ^ (crc & 0xFF)
+            CRCL = self.crcTable[tableAddr] & 0x00FF
+            crc = CRCH << 8 | CRCL
+        #self.addMessage.emit("\tcrc is " + str(crc))
+        return crc
+
+    def wait_for_packet(self) -> dict:
+        """Wait for a packet"""
+
+        packet = {'len':0, 'cmd':0, 'data':0, 'crc':1, 'timeout':1}
+
+        n = self.ser.read(2) # get the length bytes
+        if(len(n) < 2):
+            #self.addMessage.emit("\tpacket length < 2")
+            return packet
+
+        packet['len'] = int.from_bytes(n, byteorder='big', signed=False)
+        #self.addMessage.emit("\tpacket length " + str(packet['len']))
+
+        if(packet['len'] == 0): # Check for an empty packet
+            return packet
+
+        payload = self.ser.read(packet['len']) #read bytes (or timeout)
+
+        if(len(payload) != packet['len']):
+            #self.addMessage("\tincorrect payload length")
+            return packet
+
+        packet['timeout'] = 0                           # all bytes received, so timeout is not true
+        packet['cmd'] = payload[0]                      # cmd is the first byte of the payload
+        packet['data'] = payload[1:packet['len']-2]     # the data is the part of the payload that is not cmd or crc
+        packet['crc'] = self.get_crc16(payload)         # performing the crc on the whole payload should return 0
+
+        return packet
+
+
+    def send_packet(self, cmd, data) -> None:
+        """Send a packet"""
+
+        data = bytearray(data)
+        num_bytes = 3 + len(data)
+        #self.addMessage("\tsending packet length " + str(num_bytes))
+        payload = bytearray(cmd.to_bytes(1,'big'))
+        payload.extend(data)
+        crc = self.get_crc16(payload)
+        payload.extend(bytearray(crc.to_bytes(2,'big')))
+        #self.addMessage.emit("\tsending packet crc " + str(crc))
+
+        self.ser.write(num_bytes.to_bytes(2,'big'))
+        #self.addMessage.emit("\t" + str(num_bytes.to_bytes(2,'big')))
+        self.ser.write(bytes(payload))
+        #self.addMessage.emit("\t" + str(bytes(payload)))
+
+    def phase_setup(self) -> None:
+        """Setup: signal baud rate, get version, and command BL enter"""
+
+        upgrade_cmd = b'Upgrade'
+        baud_detect_byte = b'U'
+
+
+        vesion_pkg_received = False
+        packet_counter = 0
+
+        self.addMessage.emit("Phase:\tSetup")
+
+        self.ser.write(bytes(upgrade_cmd))          # send the upgrade command
+
+        self.addMessage.emit("\tSent upgrade_cmd")
+        self.sleep(5)                               # wait five seconds for ama3 to go to be bootloader mode
+
+        self.ser.reset_input_buffer()               # Handle the serial startup blip
+        self.addMessage.emit("\tCleared startup blip")
+
+        self.ser.write(baud_detect_byte)            # send the baud detection character
+        self.addMessage.emit("\tSent baud_detect_byte")
+
+        while(not vesion_pkg_received):
+
+            packet = self.wait_for_packet()
+
+            if(packet['timeout']):
+                self.addMessage.emit("\twait_for_packet timeout")
+                return
+            if(packet['crc']):
+                self.addMessage.emit("\twait_for_packet crc error")
+                return
+        
+            if(packet['cmd'] == self.SVL_CMD_VER):
+                self.addMessage.emit("\twait_for_packet complete")
+                self.installed_bootloader = int.from_bytes(packet['data'], 'big')
+                self.addMessage.emit("\tGot SVL Bootloader Version: " + str(self.installed_bootloader))
+                self.addMessage.emit("\tSending \'enter bootloader\' command")
+
+                vesion_pkg_received = True
+
+                self.send_packet(self.SVL_CMD_BL, b'')
+                #self.addMessage.emit("\tfinished send_packet")
+                return
+
+            if(packet['cmd'] == self.SVL_CMD_MSG):
+                self.addMessageRemote.emit(packet['data'].decode('ascii'))
+
+            packet_counter += 1
+            if(packet_counter > 10):    # There should be less than 10 message packets before the version packet
+                self.addMessage.emit("\tNo version packet received in time")
+                return
+
+        # Now enter the bootload phase
+
+
+    def phase_bootload(self) -> bool:
+        """Bootloader phase (Artemis is locked in)"""
+
+        startTime = time.time()
+        frame_size = 512*4
+
+        resend_max = 4
+        resend_count = 0
+
+        self.addMessage.emit("Phase:\tBootload")
+
+        with open(self.basicInfo["fileLocation"], mode='rb') as binfile:
+            application = binfile.read()
+            total_len = len(application)
+
+            total_frames = math.ceil(total_len/frame_size)
+            curr_frame = 0
+            progressChars = 0
+
+            self.addMessage.emit("\tSending " + str(total_len) +
+                         " bytes in " + str(total_frames) + " frames")
+
+            bl_done = False
+            bl_failed = False
+            done_sent = False
+
+            while((not bl_done) and (not bl_failed)):
+
+                packet = self.wait_for_packet()               # wait for indication by Artemis
+
+                print(packet)
+
+                if( packet['cmd'] == self.SVL_CMD_MSG ):
+                    self.addMessageRemote.emit(packet['data'].decode('ascii'))
+                elif( packet['cmd'] == self.SVL_CMD_DONE ):
+                            bl_done = True
+                            break
+                elif( not done_sent ):
+                    if((packet['timeout'] or packet['crc'])):
+                        self.addMessage.emit("\tError receiving packet")
+                        bl_failed = True
+                        bl_done = True
+                        break
+
+                    if( packet['cmd'] == self.SVL_CMD_NEXT ):
+                        self.addMessage.emit("\tGot frame request")
+                        curr_frame += 1
+                        resend_count = 0
+                    elif( packet['cmd'] == self.SVL_CMD_RETRY ):
+                        self.addMessage.emit("\tRetrying...")
+                        resend_count += 1
+                        if( resend_count >= resend_max ):
+                            bl_failed = True
+                            bl_done = True
+                            break
+                    else:
+                        self.addMessage.emit("\tUnknown error")
+                        bl_failed = True
+                        bl_done = True
+                        break
+
+                    if( curr_frame <= total_frames ):
+                        frame_data = application[((curr_frame-1)*frame_size):((curr_frame-1+1)*frame_size)]
+                        self.addMessage.emit("\tSending frame #" + str(curr_frame) + ", length: " + str(len(frame_data)))
+                        self.send_packet(self.SVL_CMD_FRAME, frame_data)
+                    else:
+                        self.send_packet(self.SVL_CMD_DONE, b'')
+                        done_sent = True
+
+            if( bl_failed == False ):
+                self.addMessage.emit("Upload complete!")
+                endTime = time.time()
+                bps = total_len / (endTime - startTime)
+                self.addMessage.emit("Nominal bootload " + str(round(bps, 2)) + " bytes/sec\n")
+            else:
+                self.addMessage.emit("Upload failed!\n")
+                if (self.baudRate > 115200):
+                    self.addMessage.emit("Please try a slower Baud Rate\n")
+
+            return bl_failed
+
+
+    #def upload_main(self) -> None:
+    def run(self) -> None:
+        """SparkFun Variable Loader (Variable baud rate bootloader for Artemis Apollo3 modules)"""
+        try:
+            num_tries = 3
+
+            #self.messages.clear() # Clear the message window
+
+            self.addMessage.emit("\nArtemis SVL Uploader\n")
+
+            for _ in range(num_tries):
+
+                bl_failed = False
+
+                # Open the serial port
+                self.addMessage.emit("Opening " + self.basicInfo["port"] + " at " + str(self.basicInfo["baudRate"]) + " Baud")
+
+                with serial.Serial(self.basicInfo["port"], self.basicInfo["baudRate"], timeout=0.5) as self.ser:
+
+                    t_su = 1             # startup time for Artemis bootloader 1s  (experimentally determined - 0.095 sec min delay)
+
+                    self.sleep(t_su)        # Allow Artemis to come out of reset
+                    self.phase_setup()      # Perform baud rate negotiation
+
+                    bl_failed = self.phase_bootload()     # Bootload
+
+                if( bl_failed == False ):
+                    break
+            if ((self.installed_bootloader >= 0) and (self.installed_bootloader < BOOTLOADER_VERSION)):
+                self.addMessage.emit("\nYour bootloader is out of date.\nPlease click Update Bootloader.")
+
+        except:
+            self.addMessage.emit("Could not communicate with board!")
+
+        try:
+            self.ser.close()
+        except:
+            pass
+
+
+    # ///// END of code taken from artemis_svl.py
 
 
 if __name__ == '__main__':

@@ -1,6 +1,12 @@
 # Python virtualenv
 /tools/guidevenv
 
+# Pyinstaller files
+/tools/*.spec
+/tools/dist
+/tools/build
+/tools/__pycache__
+
 #VSCode
 
 /.vscode/*

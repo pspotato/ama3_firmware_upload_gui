@@ -76,7 +76,7 @@ import hashlib
 import hmac
 import binascii
 
-BOOTLOADER_VERSION = 5 # << Change this to match the version of artemis_svl.bin
+BOOTLOADER_VERSION = 6 # << Change this to match the version of artemis_svl.bin
 
 # Setting constants
 SETTING_PORT_NAME = 'port_name'

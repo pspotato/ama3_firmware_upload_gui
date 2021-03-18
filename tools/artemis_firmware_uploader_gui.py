@@ -82,9 +82,9 @@ BOOTLOADER_VERSION = 6 # << Change this to match the version of artemis_svl.bin
 SETTING_PORT_NAME = 'port_name'
 SETTING_FILE_LOCATION = 'file_location'
 SETTING_BAUD_RATE = 'baud_rate' # Default to 115200 for upload
-SETTING_ARTEMIS = 'artemis' # Default to Artemis-based boards
+#SETTING_ARTEMIS = 'artemis' # Default to Artemis-based boards
 
-guiVersion = 'v3.0'
+guiVersion = 'v1.3'
 
 def trap_exc_during_debug(*args):
     # when app raises uncaught exception, print info
@@ -315,22 +315,22 @@ class MainWindow(QMainWindow):
         #self.messages_remote.setMinimumSize(1, 2)
         #self.messages_remote.resize(1, 2)
 
-        # Menu Bar
-        menubar = self.menuBar()
-        boardMenu = menubar.addMenu('Board Type')
+        ## Menu Bar
+        #menubar = self.menuBar()
+        #boardMenu = menubar.addMenu('Board Type')
         
-        boardGroup = QActionGroup(self)
+        #boardGroup = QActionGroup(self)
 
-        self.artemis = QAction('Artemis', self, checkable=True)
-        self.artemis.setStatusTip('Artemis-based boards including the OLA and AGT')
-        self.artemis.setChecked(True) # Default to artemis
-        a = boardGroup.addAction(self.artemis)
-        boardMenu.addAction(a)
+        #self.artemis = QAction('Artemis', self, checkable=True)
+        #self.artemis.setStatusTip('Artemis-based boards including the OLA and AGT')
+        #self.artemis.setChecked(True) # Default to artemis
+        #a = boardGroup.addAction(self.artemis)
+        #boardMenu.addAction(a)
         
-        self.apollo3 = QAction('Apollo3', self, checkable=True)
-        self.apollo3.setStatusTip('Apollo3 Blue development boards including the SparkFun Edge')
-        a = boardGroup.addAction(self.apollo3)
-        boardMenu.addAction(a)
+        #self.apollo3 = QAction('Apollo3', self, checkable=True)
+        #self.apollo3.setStatusTip('Apollo3 Blue development boards including the SparkFun Edge')
+        #a = boardGroup.addAction(self.apollo3)
+        #boardMenu.addAction(a)
 
         # Status Bar
         self.statusBar()
@@ -418,14 +418,14 @@ class MainWindow(QMainWindow):
             if index > -1:
                 self.baud_combobox.setCurrentIndex(index)
 
-        checked = settings.value(SETTING_ARTEMIS)
-        if checked is not None:
-            if (checked == 'True'):
-                self.artemis.setChecked(True)
-                self.apollo3.setChecked(False)
-            else:
-                self.artemis.setChecked(False)
-                self.apollo3.setChecked(True)
+        #checked = settings.value(SETTING_ARTEMIS)
+        #if checked is not None:
+        #    if (checked == 'True'):
+        #        self.artemis.setChecked(True)
+        #        self.apollo3.setChecked(False)
+        #    else:
+        #        self.artemis.setChecked(False)
+        #        self.apollo3.setChecked(True)
 
     def _save_settings(self) -> None:
         """Save settings on shutdown."""
@@ -434,11 +434,11 @@ class MainWindow(QMainWindow):
         settings.setValue(SETTING_PORT_NAME, self.port)
         settings.setValue(SETTING_FILE_LOCATION, self.fileLocation_lineedit.text())
         settings.setValue(SETTING_BAUD_RATE, self.baudRate)
-        if (self.artemis.isChecked()): # Convert isChecked to str
-            checkedStr = 'True'
-        else:
-            checkedStr = 'False'
-        settings.setValue(SETTING_ARTEMIS, checkedStr)
+        #if (self.artemis.isChecked()): # Convert isChecked to str
+        #    checkedStr = 'True'
+        #else:
+        #    checkedStr = 'False'
+        #settings.setValue(SETTING_ARTEMIS, checkedStr)
 
     def _clean_settings(self) -> None:
         """Clean (remove) all existing settings."""
@@ -572,7 +572,7 @@ class MainWindow(QMainWindow):
                      str(currDT.day) + " " + \
                      str(currDT.hour) + " " + \
                      str(currDT.minute) + " " + \
-                     str(currDT.second)
+                     str(currDT.second) + "\r\n"
                 payload = bytes('DateTime ' + DT, encoding='utf8')
                 self.ser.write(payload) 
                 #remoteReply = self.ser.read(30)
@@ -621,9 +621,6 @@ class MainWindow(QMainWindow):
         self.uploader.addMessageRemote[str].connect(self.addMessageRemote)
         self.upload_thread.started.connect(self.uploader.upload_main)
         self.uploader.finished.connect(self.done)
-        #self.uploader.finished.connect(self.upload_thread.quit)
-        #self.uploader.finished.connect(self.uploader.deleteLater)
-        #self.uploader.finished.connect(self.upload_thread.deleteLater)
 
         # start uploader
         self.upload_thread.start()
@@ -823,7 +820,7 @@ class Uploader(QObject):
 
             #self.messages.clear() # Clear the message window
 
-            self.addMessage.emit("\nArtemis SVL Uploader\n")
+            self.addMessage.emit("\nLocaSafe UT221 SVL Uploader\n")
 
             for _ in range(num_tries):
 
@@ -854,8 +851,8 @@ class Uploader(QObject):
 if __name__ == '__main__':
     import sys
     app = QApplication([sys.argv])
-    app.setOrganizationName('SparkFun')
-    app.setApplicationName('Artemis Firmware Uploader ' + guiVersion)
+    app.setOrganizationName('Locatechs')
+    app.setApplicationName('LocaSafe UT221 Firmware Uploader ' + guiVersion)
     app.setWindowIcon(QIcon(resource_path("Artemis-Logo-Rounded.png")))
     w = MainWindow()
     w.show()
